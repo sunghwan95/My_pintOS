@@ -83,7 +83,7 @@ $ brew install gitmoji
 5. 내 브랜치 삭제 ex) git branch -D sunghwan95
 6. 다시 내 브랜치 생성 ex) git branch sunghwan95
 7. 내 브랜치로 이동 ex) git checkout sunghwan95
-8. 다시 작업 시작
+8. 작업 재개
 ```
 
 ## merge
