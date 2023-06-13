@@ -71,14 +71,19 @@ $ brew install gitmoji
 > 로컬 브런치 명은 깃허브 아이디로 하고, origin에 푸시한 후 PR한 후 merge를 시도한다.
 
 ```
-git add file.name
-or
-git add .
-gitmoji -c
-1. vscode 상에서 gitmoji 선택
-2. commit title : add, delete 등 먼저 명확한 의미 작성 ex) add .gitignore
-3. commit message : 상세 내용 ex) .gitignore 불필요한 .vscode 폴더 추가
-git push origin 내 브런치 명 ex) git push origin uujeen
+1. git add file.name
+        or
+   git add .
+2. gitmoji -c
+    1. vscode 상에서 gitmoji 선택
+    2. commit title : add, delete 등 먼저 명확한 의미 작성 ex) add .gitignore
+    3. commit message : 상세 내용 ex) .gitignore 불필요한 .vscode 폴더 추가
+3. git push origin 내 브랜치 명 ex) git push origin sunghwan95
+4. git checkout main 이후 git pull
+5. 내 브랜치 삭제 ex) git branch -D sunghwan95
+6. 다시 내 브랜치 생성 ex) git branch sunghwan95
+7. 내 브랜치로 이동 ex) git checkout sunghwan95
+8. 다시 작업 시작
 ```
 
 ## merge
@@ -90,7 +95,7 @@ push 후 깃헙 페이지에서 PR 후 팀원들과 상의 후 merge하기
 ## pull
 
 ```
-git pull origin 내 브런치 명 ex) git pull origin uujeen
+git pull origin 내 브런치 명 ex) git pull origin sunghwan95
 ```
 
 # Run
