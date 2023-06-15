@@ -16,6 +16,7 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -31,6 +32,19 @@ page_get_type (struct page *page) {
 			return ty;
 	}
 }
+/* project 3-----------------------------------------------------*/
+// 페이지의 va를 해쉬화 하는 함수.
+uint64_t hash_func(const struct hash_elem *p_elem, void* aux UNUSED){
+	struct page *p = hash_entry (p_elem, struct page, hash_elem);
+	return hash_bytes(&p->va, sizeof(p->va));
+}
+
+bool less_func(const struct hash_elem *a, const struct hash_elem *b, void* aux){
+	const struct page* p_a = hash_entry(a, struct page, hash_elem);
+	const struct page* p_b = hash_entry(b, struct page, hash_elem);
+	return p_a->va < p_b->va;
+}
+/*---------------------------------------------------------------*/
 
 /* Helpers */
 static struct frame *vm_get_victim (void);
@@ -50,11 +64,18 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
-		/* TODO: Create the page, fetch the initialier according to the VM type,
-		 * TODO: and then create "uninit" page struct by calling uninit_new. You
-		 * TODO: should modify the field after calling the uninit_new. */
+		struct page *page = (struct page*)malloc(sizeof(struct page));
 
-		/* TODO: Insert the page into the spt. */
+		switch (VM_TYPE(type)){
+			case VM_ANON:
+				uninit_new(page, page->va, init, type, aux, anon_initializer(page, type, aux));
+				break;
+			case VM_FILE:
+				uninit_new(page, page->va, init, type, aux, file_backed_initializer(page, type, aux));
+				break;
+		}
+		page->writable = writable;
+		return spt_insert_page(spt, page);
 	}
 err:
 	return false;
@@ -63,26 +84,41 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
-	/* TODO: Fill this function. */
+		/* TODO: Fill this function. */
+	struct page *page = (struct page *)malloc(sizeof(struct page)); // 페이지 할당
+	struct hash_elem *spt_elem;
 
-	return page;
+	page->va = pg_round_down(va);						// 페이지 번호 얻기
+	if (hash_find(&spt->spt_hash, &page->hash_elem) == NULL) // 존재안하면 NULL
+	{
+		free(page);
+		return NULL;
+	}
+	else // 하면
+	{
+		spt_elem = hash_find(&spt->spt_hash, &page->hash_elem); // hash_entry 리턴
+		free(page);
+		return hash_entry(spt_elem, struct page, hash_elem);
+	}
 }
 
 /* Insert PAGE into spt with validation. */
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
-	int succ = false;
-	/* TODO: Fill this function. */
+spt_insert_page (struct supplemental_page_table *spt, struct page *page) {
 
-	return succ;
+	/* TODO: Fill this function. */
+	if(hash_insert(spt, &page->hash_elem)) return true;
+	else return false;
 }
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
-	vm_dealloc_page (page);
-	return true;
+	if(hash_delete(spt, &page->hash_elem)){
+		vm_dealloc_page (page);
+		return true;
+	}else{
+		return false;
+	}
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -110,7 +146,7 @@ vm_evict_frame (void) {
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
+	struct frame *frame = palloc_get_page(PAL_ZERO | PAL_USER);
 	/* TODO: Fill this function. */
 
 	ASSERT (frame != NULL);
@@ -151,8 +187,9 @@ vm_dealloc_page (struct page *page) {
 /* Claim the page that allocate on VA. */
 bool
 vm_claim_page (void *va UNUSED) {
-	struct page *page = NULL;
 	/* TODO: Fill this function */
+	struct supplemental_page_table *spt = &thread_current()->spt;
+	struct page *page = spt_find_page(spt, va);
 
 	return vm_do_claim_page (page);
 }
@@ -174,6 +211,7 @@ vm_do_claim_page (struct page *page) {
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	hash_init(&spt->spt_hash, hash_func, less_func, NULL);
 }
 
 /* Copy supplemental page table from src to dst */

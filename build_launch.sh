@@ -1,4 +1,4 @@
 make clean
 source ./activate
-cd userprog
+cd vm
 make check
