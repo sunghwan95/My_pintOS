@@ -115,5 +115,6 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
+void remove_spt(struct hash_elem *elem, void* aux);
 
 #endif  /* VM_VM_H */

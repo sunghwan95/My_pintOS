@@ -36,6 +36,7 @@ void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
 void check_address(void *addr);
+void check_buffer(void* buffer, unsigned size, void *rsp, bool writable);
 int process_add_file(struct file *f);
 struct file *process_get_file(int fd);
 
@@ -106,9 +107,11 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		f->R.rax = filesize(f->R.rdi);
 		break;
 	case SYS_READ: /* Read from a file. */
+		check_buffer(f->R.rsi, f->R.rdx, f->rsp, 1);
 		f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_WRITE: /* Write to a file. */
+		check_buffer(f->R.rsi, f->R.rdx, f->rsp, 1);
 		f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_SEEK: /* Change position in a file. */
@@ -348,5 +351,14 @@ void check_address(void *addr)
 	if (is_kernel_vaddr(addr) || pml4_get_page(curr->pml4,addr) == NULL)
 	{
 		exit(-1);
+	}
+	return spt_find_page(&curr->spt, addr);
+}
+
+void check_buffer(void* buffer, unsigned size, void *rsp, bool writable){
+	for(int i = 0; i < size; i++){
+		struct page *page = check_address(buffer + i);
+		if(page == NULL) exit(-1);
+		if(writable == true && page->writable == false) exit(-1);
 	}
 }

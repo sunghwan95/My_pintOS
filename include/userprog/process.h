@@ -14,4 +14,9 @@ struct file *process_get_file(int fd);
 void process_close_file(int fd);
 void remove_child_process(struct thread *cp);
 
+struct segment {
+    struct file *file;
+    off_t ofs;
+    size_t page_read_bytes;
+}
 #endif /* userprog/process.h */
