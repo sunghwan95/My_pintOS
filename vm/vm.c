@@ -6,12 +6,14 @@
 #include "threads/vaddr.h"
 #include "include/userprog/process.h"
 #include "threads/mmu.h"
+#include "threads/thread.h"
 #include <string.h>
 uint64_t hash_func(const struct hash_elem *p_elem, void *aux UNUSED);
 bool less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 void spt_dealloc(struct hash_elem *e, void *aux);
 void remove_spt(struct hash_elem *elem, void *aux);
 bool install_page(void *upage, void *kpage, bool writable);
+static bool vm_stack_growth(void *addr UNUSED);
 struct list frame_table;
 struct lock frame_lock; // lock_aquire(), realese용
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -58,6 +60,7 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writabl
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page(spt, upage) == NULL){
 		struct page *page = (struct page *)malloc(sizeof(struct page));
+		if(page == NULL) return false;
 
 		switch (VM_TYPE(type)){
 			case VM_ANON:
@@ -145,8 +148,18 @@ vm_get_frame(void){
 }
 
 /* Growing the stack. */
+/*
+pg_round_down은 인자로 전달된 가상 주소를 페이지의 시작주소로 내림차순으로 반올림해서 반환(=새로운 페이지의 시작주소로 삼는다는 뜻)하는 함수임.
+(스택은 아래로 자라기 때문에 주소를 내려줘야함.)
+즉, 주어진 가상 주소를 페이지의 크기로 정렬하여 해당 페이지의 시작 주소를 반환한다.
+pg_round_down 함수를 쓰면 페이지 단위로 가상 주소를 정렬할 수 있기 때문에 가상 주소를 페이지 크기로 분할할 수 있으며 페이지 테이블을 통해 데이터를 관리하는데 용이하다.
+*/
 static void
 vm_stack_growth(void *addr UNUSED){
+	struct thread *curr = thread_current();
+	if(vm_alloc_page_with_initializer(VM_ANON, pg_round_down(addr), true, NULL, NULL)){
+		curr->stack_bottom -= PGSIZE;
+	}
 }
 
 /* Handle the fault on write_protected page */
@@ -154,23 +167,72 @@ static bool
 vm_handle_wp(struct page *page UNUSED){
 }
 
-bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED){
-	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
-	struct page *page = NULL;
+// bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED){
+// 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+// 	struct page *page = NULL;
+// 	/* TODO: Validate the fault */
+// 	/* TODO: Your code goes here */
+// 	bool success = false;
+// 	if (is_kernel_vaddr(addr) || addr == NULL)
+// 		return false;
+
+// 	page = spt_find_page(spt, addr);
+// 	if (page == NULL)
+// 		return false;
+// 	else{
+// 		success = vm_do_claim_page(page);
+// 		return success;
+// 	}
+// 	return success;
+// }
+
+bool
+vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
+		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-	bool success = false;
-	if (is_kernel_vaddr(addr))
-		return false;
-	page = spt_find_page(spt, addr);
-	if (page == NULL)
-		return false;
-	else{
-		success = vm_do_claim_page(page);
-		return success;
+	if(is_kernel_vaddr(addr) || !addr) return false;
+
+	void* rsp_stack;
+	if(is_kernel_vaddr(f->rsp)){
+		rsp_stack = thread_current()->rsp_stack;
+	}else{
+		rsp_stack = f->rsp;
 	}
-	return success;
+
+	if(not_present){
+		if (USER_STACK - (1 << 20) <= addr && addr < USER_STACK && rsp_stack - 8 <= addr && thread_current()->stack_bottom > addr){
+			vm_stack_growth((thread_current()->stack_bottom) - PGSIZE);
+		}
+	}
+	return vm_claim_page(addr);
 }
+
+// bool
+// vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED){
+// 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+// 	struct page *page = NULL;
+
+// 	bool success = false;
+// 	if(is_kernel_vaddr(addr)) return false;
+
+// 	page = spt_find_page(spt, addr);
+// 	if(page == NULL) return false;
+// 	if(not_present){
+// 		if(!vm_claim_page(addr)){
+// 			if (f->rsp - 8 <= addr && addr < USER_STACK && thread_current()->stack_bottom > addr && USER_STACK - (1 << 20) < addr){
+// 				vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
+// 			}
+// 			return false;
+// 		}else{
+// 			return true;
+// 		}
+// 	}else{
+// 		success = vm_do_claim_page(page);
+// 		return success;
+// 	}
+// 	return success;
+// }
 
 /* Free the page.
  * DO NOT MODIFY THIS FUNCTION. */
@@ -195,7 +257,6 @@ bool vm_claim_page(void *va UNUSED){
 static bool
 vm_do_claim_page(struct page *page){
 	struct frame *frame = vm_get_frame();
-	struct thread *t = thread_current();
 	if (frame == NULL){
 		return false;
 	}
@@ -211,14 +272,6 @@ vm_do_claim_page(struct page *page){
 		return swap_in(page, frame->kva); // 매핑 성공시 swap-in
 	}
 	return false;
-}
-
-bool install_page(void *upage, void *kpage, bool writable){
-   struct thread *t = thread_current();
-
-   /* Verify that there's not already a page at that virtual
-    * address, then map our page there. */
-   return (pml4_get_page(t->pml4, upage) == NULL && pml4_set_page(t->pml4, upage, kpage, writable));
 }
 
 /* Initialize new supplemental page table */
@@ -273,5 +326,5 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt UNUSED){
 
 void remove_spt(struct hash_elem *elem, void *aux){
 	struct page *page = hash_entry(elem, struct page, hash_elem);
-	free(page);
+	vm_dealloc_page(page);
 }

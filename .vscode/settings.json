@@ -1,6 +1,12 @@
 {
   "files.associations": {
     "stdint.h": "c",
-    "uninit.h": "c"
+    "uninit.h": "c",
+    "malloc.h": "c",
+    "vm.h": "c",
+    "inspect.h": "c",
+    "vaddr.h": "c",
+    "process.h": "c",
+    "mmu.h": "c"
   }
 }

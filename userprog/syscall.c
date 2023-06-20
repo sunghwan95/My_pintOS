@@ -19,7 +19,6 @@
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
-void check_address(void *addr);
 void get_argument(void *rsp, int *arg, int count);
 void halt(void);
 void exit(int status);
@@ -35,8 +34,8 @@ int write(int fd, const void *buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
-void check_address(void *addr);
-void check_buffer(void* buffer, unsigned size, void *rsp, bool writable);
+struct page* check_address(void *addr);
+void check_buffer(void* buffer, unsigned size, bool writable);
 int process_add_file(struct file *f);
 struct file *process_get_file(int fd);
 
@@ -72,7 +71,6 @@ void syscall_init(void)
 void syscall_handler(struct intr_frame *f UNUSED)
 {
 	// TODO: Your implementation goes here.
-	check_address(f->rsp);
 	int syscall_num = f->R.rax;
 	switch (syscall_num)
 	{
@@ -83,8 +81,7 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		exit(f->R.rdi);
 		break;
 	case SYS_FORK: /* Clone current process. */{
-		struct thread *cur = thread_current();
-		memcpy(&cur->tf, f, sizeof(struct intr_frame));
+		memcpy(&thread_current()->tf, f, sizeof(struct intr_frame));
 		f->R.rax = fork(f->R.rdi);
 		break;
 		}
@@ -107,11 +104,9 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		f->R.rax = filesize(f->R.rdi);
 		break;
 	case SYS_READ: /* Read from a file. */
-		check_buffer(f->R.rsi, f->R.rdx, f->rsp, 1);
 		f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_WRITE: /* Write to a file. */
-		check_buffer(f->R.rsi, f->R.rdx, f->rsp, 1);
 		f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_SEEK: /* Change position in a file. */
@@ -185,6 +180,7 @@ pid_t fork(const char *thread_name)
 */
 int exec(const char *cmd_line)
 {
+	check_address(cmd_line);
 	char *fn_copy;
 	tid_t tid;
 
@@ -244,7 +240,7 @@ buffer 안에 fd 로 열려있는 파일로부터 size 바이트를 읽습니다
 */
 int read(int fd, void *buffer, unsigned size)
 {
-	check_address(buffer);
+	check_buffer(buffer, size, true);
     int file_size;
     char *read_buffer = buffer;
     if (fd == 0)
@@ -284,6 +280,7 @@ buffer로부터 open file fd로 size 바이트를 적어줍니다.
 */
 int write(int fd, const void *buffer, unsigned size)
 {
+	check_buffer(buffer, size, true);
 	int file_size;
 	if (fd == STDOUT_FILENO)
 	{
@@ -294,6 +291,7 @@ int write(int fd, const void *buffer, unsigned size)
 		return -1;
 	}
 	else{
+		if(process_get_file(fd) == NULL) return -1;
 		lock_acquire(&filesys_lock);
 		file_size = file_write(process_get_file(fd), buffer, size);
 		lock_release(&filesys_lock);
@@ -345,18 +343,19 @@ void close(int fd)
 주소 값이 유저 영역 주소 값인지 확인
 유저 영역을 벗어난 영역일 경우 프로세스 종료(exit(-1)
 */
-void check_address(void *addr)
+struct page* check_address(void *addr)
 {
 	struct thread *curr = thread_current();
-	if (is_kernel_vaddr(addr) || pml4_get_page(curr->pml4,addr) == NULL)
-	{
+	if (is_kernel_vaddr(addr) || !addr){
 		exit(-1);
 	}
-	return spt_find_page(&curr->spt, addr);
+	struct page *page = spt_find_page(&curr->spt, addr);
+	if(!page) exit(-1);
+	return page;
 }
 
-void check_buffer(void* buffer, unsigned size, void *rsp, bool writable){
-	for(int i = 0; i < size; i++){
+void check_buffer(void* buffer, unsigned size, bool writable){
+	for(int i = 0; i <= size; i++){
 		struct page *page = check_address(buffer + i);
 		if(page == NULL) exit(-1);
 		if(writable == true && page->writable == false) exit(-1);

@@ -234,6 +234,10 @@ int process_exec(void *f_name)
     /* We first kill the current context */
     process_cleanup();
 
+#ifdef VM
+	supplemental_page_table_init(&cur->spt);
+#endif
+
     // for argument parsing
     char *parse[64]; 
     int count = 0;  
@@ -363,7 +367,8 @@ void process_exit(void)
 	struct thread *cur = thread_current();
 	for (int i = 2; i < 64; i++)
 		close(i);
-	// palloc_free_multiple(cur->fdt,2);
+	palloc_free_multiple(cur->fdt,2);
+	cur->fdt = NULL;
 	file_close(cur->running_file);
 	sema_up(&cur->exit_sema);
 	sema_down(&cur->free_sema);
@@ -627,13 +632,21 @@ validate_segment (const struct Phdr *phdr, struct file *file) {
 	return true;
 }
 
+bool install_page(void *upage, void *kpage, bool writable)
+{
+	struct thread *t = thread_current();
+
+	/* Verify that there's not already a page at that virtual
+	 * address, then map our page there. */
+	return (pml4_get_page(t->pml4, upage) == NULL && pml4_set_page(t->pml4, upage, kpage, writable));
+}
+
 #ifndef VM
 /* Codes of this block will be ONLY USED DURING project 2.
  * If you want to implement the function for whole project 2, implement it
  * outside of #ifndef macro. */
 
 /* load() helpers. */
-static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Loads a segment starting at offset OFS in FILE at address
  * UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
@@ -708,24 +721,6 @@ setup_stack (struct intr_frame *if_) {
 	return success;
 }
 
-/* Adds a mapping from user virtual address UPAGE to kernel
- * virtual address KPAGE to the page table.
- * If WRITABLE is true, the user process may modify the page;
- * otherwise, it is read-only.
- * UPAGE must not already be mapped.
- * KPAGE should probably be a page obtained from the user pool
- * with palloc_get_page().
- * Returns true on success, false if UPAGE is already mapped or
- * if memory allocation fails. */
-static bool
-install_page (void *upage, void *kpage, bool writable) {
-	struct thread *t = thread_current ();
-
-	/* Verify that there's not already a page at that virtual
-	 * address, then map our page there. */
-	return (pml4_get_page (t->pml4, upage) == NULL
-			&& pml4_set_page (t->pml4, upage, kpage, writable));
-}
 #else
 /* From here, codes will be used after project 3.
  * If you want to implement the function for only project 2, implement it on the
@@ -783,7 +778,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		//void *aux = NULL;
 		struct segment *seg = (struct segment*)malloc(sizeof(struct segment));
 		seg->file = file;
-		seg->read_bytes = page_read_bytes;
+		seg->page_read_bytes = page_read_bytes;
 		seg->ofs = ofs;
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
 					writable, lazy_load_segment, seg))
@@ -808,10 +803,10 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
-	if (vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, 1)){
+	if (vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true)){
 		success = vm_claim_page(stack_bottom);
 		if (success){
-			if_->rsp = USER_STACK;
+			if_->rsp = (uintptr_t)USER_STACK;
 			thread_current()->stack_bottom = stack_bottom;
 		}
 	}
