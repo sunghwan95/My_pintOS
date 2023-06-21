@@ -13,7 +13,7 @@ bool less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 void spt_dealloc(struct hash_elem *e, void *aux);
 void remove_spt(struct hash_elem *elem, void *aux);
 bool install_page(void *upage, void *kpage, bool writable);
-static bool vm_stack_growth(void *addr UNUSED);
+static void vm_stack_growth(void *addr UNUSED);
 struct list frame_table;
 struct lock frame_lock; // lock_aquire(), realese용
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -202,7 +202,8 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 
 	if(not_present){
 		if (USER_STACK - (1 << 20) <= addr && addr < USER_STACK && rsp_stack - 8 <= addr && thread_current()->stack_bottom > addr){
-			vm_stack_growth((thread_current()->stack_bottom) - PGSIZE);
+			addr = thread_current()->stack_bottom - PGSIZE;
+			vm_stack_growth(addr);
 		}
 	}
 	return vm_claim_page(addr);
