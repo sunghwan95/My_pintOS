@@ -7,6 +7,7 @@
     "inspect.h": "c",
     "vaddr.h": "c",
     "process.h": "c",
-    "mmu.h": "c"
+    "mmu.h": "c",
+    "syscall.h": "c"
   }
 }

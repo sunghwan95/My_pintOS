@@ -30,15 +30,17 @@ bool remove(const char *file);
 int open(const char *file);
 int filesize(int fd);
 int read(int fd, void *buffer, unsigned size);
-int write(int fd, const void *buffer, unsigned size);
+int writable(int fd, const void *buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
-struct page* check_address(void *addr);
-void check_buffer(void* buffer, unsigned size, bool writable);
 int process_add_file(struct file *f);
 struct file *process_get_file(int fd);
+struct page* check_address(void *addr);
+void check_buffer(void* buffer, unsigned size, bool writable);
 
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap (void *addr);
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -107,7 +109,7 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_WRITE: /* Write to a file. */
-		f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
+		f->R.rax = writable(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_SEEK: /* Change position in a file. */
 		seek(f->R.rdi, f->R.rsi);
@@ -117,6 +119,12 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		break;
 	case SYS_CLOSE: /* Close a file. */
 		close(f->R.rdi);
+		break;
+	case SYS_MMAP:
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		munmap(f->R.rdi);
 		break;
 	default:
 		thread_exit();
@@ -202,7 +210,6 @@ int exec(const char *cmd_line)
 */
 int wait(pid_t pid)
 {
-	// return 81;
 	return process_wait(pid);
 }
 /*
@@ -278,9 +285,9 @@ buffer로부터 open file fd로 size 바이트를 적어줍니다.
 실제로 적힌 바이트의 수를 반환해주고,
 일부 바이트가 적히지 못했다면 size보다 더 작은 바이트 수가 반환될 수 있습니다.
 */
-int write(int fd, const void *buffer, unsigned size)
+int writable(int fd, const void *buffer, unsigned size)
 {
-	check_buffer(buffer, size, true);
+	check_buffer(buffer, size, false);
 	int file_size;
 	if (fd == STDOUT_FILENO)
 	{
@@ -288,10 +295,11 @@ int write(int fd, const void *buffer, unsigned size)
 		file_size = size;
 	}
 	else if(fd == STDIN_FILENO){
-		return -1;
+		exit(-1);
 	}
 	else{
-		if(process_get_file(fd) == NULL) return -1;
+		if(process_get_file(fd) == NULL) 
+			return -1;
 		lock_acquire(&filesys_lock);
 		file_size = file_write(process_get_file(fd), buffer, size);
 		lock_release(&filesys_lock);
@@ -350,14 +358,49 @@ struct page* check_address(void *addr)
 		exit(-1);
 	}
 	struct page *page = spt_find_page(&curr->spt, addr);
-	if(!page) exit(-1);
+	if(!page) 
+		exit(-1);
 	return page;
 }
 
 void check_buffer(void* buffer, unsigned size, bool writable){
-	for(int i = 0; i <= size; i++){
+	for(char i = 0; i <= size; i++){
 		struct page *page = check_address(buffer + i);
-		if(page == NULL) exit(-1);
-		if(writable == true && page->writable == false) exit(-1);
+		if(writable == true && page->writable == false) 
+			exit(-1);
 	}
 }
+
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
+	if(!addr || pg_round_down(addr) != addr || is_kernel_vaddr(addr) || length <=0 || length >= 1<<20) 
+		return NULL;
+
+	if(fd < FD_MIN || fd >= FD_MAX) 
+		exit(-1);
+
+	if(offset % PGSIZE != 0)
+		return NULL;
+
+	if(spt_find_page(&thread_current()->spt, addr)) 
+		return NULL;
+
+	struct file *file = process_get_file(fd);
+	if(file == NULL) 
+		return NULL;
+	
+	file = file_reopen(file);
+	if(file == NULL)
+		return NULL;
+	
+	off_t file_len = file_length(file);
+	if(file_len <= 0)
+		return NULL;
+
+	return do_mmap(addr, file_len, writable, file, offset);
+}
+
+void munmap (void *addr){
+	if(is_kernel_vaddr(addr) || !addr)
+    	return NULL;
+	do_munmap(addr);
+};

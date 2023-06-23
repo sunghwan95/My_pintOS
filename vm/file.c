@@ -1,11 +1,14 @@
 /* file.c: Implementation of memory backed file object (mmaped object). */
 
 #include "vm/vm.h"
+#include "userprog/process.h"
+#include "threads/mmu.h"
+#include "threads/malloc.h"
+#include "userprog/syscall.h"
 
 static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
 static void file_backed_destroy (struct page *page);
-
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
 	.swap_in = file_backed_swap_in,
@@ -47,12 +50,51 @@ file_backed_destroy (struct page *page) {
 }
 
 /* Do the mmap */
+//내 꺼
 void *
-do_mmap (void *addr, size_t length, int writable,
-		struct file *file, off_t offset) {
+do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) {
+	void* init_addr = addr;
+
+	size_t read_bytes = length;
+
+	while(read_bytes > 0){
+		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+
+		struct segment *seg = (struct segment*)malloc(sizeof(struct segment));
+		seg->file = file;
+		seg->page_read_bytes = page_read_bytes;
+		seg->ofs = offset;
+		if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable, lazy_load_segment, seg)){
+			free(seg);
+			return;
+		}
+		read_bytes -= page_read_bytes;
+		addr += PGSIZE;
+		offset += page_read_bytes;
+	}
+	return init_addr;
 }
 
-/* Do the munmap */
-void
-do_munmap (void *addr) {
+void do_munmap(void *addr){
+	struct thread *curr = thread_current();
+	struct page *page = spt_find_page(&curr->spt, addr);
+	if (page == NULL)
+		return; 
+	struct segment *seg = page->uninit.aux;
+	if (!seg->file)
+		return;
+
+	while (page != NULL){
+		if (pml4_is_dirty(curr->pml4, addr)){
+			lock_acquire(&filesys_lock);
+			file_seek(seg->file, seg->ofs);
+			file_write(seg->file, page->frame->kva, seg->page_read_bytes);
+			lock_release(&filesys_lock);
+			//pml4_set_dirty(curr->pml4, addr, false);
+		}
+		pml4_clear_page(curr->pml4, addr);
+		addr += PGSIZE;
+		page = spt_find_page(&curr->spt, addr);
+	}
 }
+

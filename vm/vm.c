@@ -7,6 +7,7 @@
 #include "include/userprog/process.h"
 #include "threads/mmu.h"
 #include "threads/thread.h"
+#include "vm/file.h"
 #include <string.h>
 uint64_t hash_func(const struct hash_elem *p_elem, void *aux UNUSED);
 bool less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux);
@@ -14,6 +15,8 @@ void spt_dealloc(struct hash_elem *e, void *aux);
 void remove_spt(struct hash_elem *elem, void *aux);
 bool install_page(void *upage, void *kpage, bool writable);
 static void vm_stack_growth(void *addr UNUSED);
+void iter_munmap(struct supplemental_page_table *spt);
+
 struct list frame_table;
 struct lock frame_lock; // lock_aquire(), realese용
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -49,9 +52,6 @@ static struct frame *vm_get_victim(void);
 static bool vm_do_claim_page(struct page *page);
 static struct frame *vm_evict_frame(void);
 
-/* 이니셜라이저를 사용하여 보류 중인 페이지 개체를 만듭니다. 생성하려는 경우
- * 페이지, 직접 생성하지 말고 이 기능을 통해 생성하거나
- * "vm_alloc_page". */
 bool vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable, vm_initializer *init, void *aux){
 	ASSERT(VM_TYPE(type) != VM_UNINIT)
 
@@ -68,6 +68,8 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writabl
 				break;
 			case VM_FILE:
 				uninit_new(page, upage, init, type, aux, file_backed_initializer);
+				break;
+			default:
 				break;
 		}
 		page->writable = writable;
@@ -167,25 +169,6 @@ static bool
 vm_handle_wp(struct page *page UNUSED){
 }
 
-// bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED){
-// 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
-// 	struct page *page = NULL;
-// 	/* TODO: Validate the fault */
-// 	/* TODO: Your code goes here */
-// 	bool success = false;
-// 	if (is_kernel_vaddr(addr) || addr == NULL)
-// 		return false;
-
-// 	page = spt_find_page(spt, addr);
-// 	if (page == NULL)
-// 		return false;
-// 	else{
-// 		success = vm_do_claim_page(page);
-// 		return success;
-// 	}
-// 	return success;
-// }
-
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
@@ -193,47 +176,16 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	/* TODO: Your code goes here */
 	if(is_kernel_vaddr(addr) || !addr) return false;
 
-	void* rsp_stack;
-	if(is_kernel_vaddr(f->rsp)){
-		rsp_stack = thread_current()->rsp_stack;
-	}else{
-		rsp_stack = f->rsp;
-	}
+	//void* rsp_stack = is_kernel_vaddr(f->rsp)? thread_current()->rsp_stack : f->rsp;
 
 	if(not_present){
-		if (USER_STACK - (1 << 20) <= addr && addr < USER_STACK && rsp_stack - 8 <= addr && thread_current()->stack_bottom > addr){
+		if (USER_STACK - (1 << 20) <= addr && addr <= USER_STACK && f->rsp - 8 <= addr && thread_current()->stack_bottom >= addr){
 			addr = thread_current()->stack_bottom - PGSIZE;
 			vm_stack_growth(addr);
 		}
 	}
 	return vm_claim_page(addr);
 }
-
-// bool
-// vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED){
-// 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
-// 	struct page *page = NULL;
-
-// 	bool success = false;
-// 	if(is_kernel_vaddr(addr)) return false;
-
-// 	page = spt_find_page(spt, addr);
-// 	if(page == NULL) return false;
-// 	if(not_present){
-// 		if(!vm_claim_page(addr)){
-// 			if (f->rsp - 8 <= addr && addr < USER_STACK && thread_current()->stack_bottom > addr && USER_STACK - (1 << 20) < addr){
-// 				vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
-// 			}
-// 			return false;
-// 		}else{
-// 			return true;
-// 		}
-// 	}else{
-// 		success = vm_do_claim_page(page);
-// 		return success;
-// 	}
-// 	return success;
-// }
 
 /* Free the page.
  * DO NOT MODIFY THIS FUNCTION. */
@@ -258,9 +210,6 @@ bool vm_claim_page(void *va UNUSED){
 static bool
 vm_do_claim_page(struct page *page){
 	struct frame *frame = vm_get_frame();
-	if (frame == NULL){
-		return false;
-	}
 	/* Set links */
 	frame->page = page;
 	page->frame = frame;
@@ -328,4 +277,16 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt UNUSED){
 void remove_spt(struct hash_elem *elem, void *aux){
 	struct page *page = hash_entry(elem, struct page, hash_elem);
 	vm_dealloc_page(page);
+}
+
+void iter_munmap(struct supplemental_page_table *spt){
+	struct hash_iterator i;
+	struct page* target;
+	hash_first(&i, &spt->spt_hash);
+	while (hash_next(&i)){
+		target = hash_entry(hash_cur(&i), struct page, hash_elem);
+		if (target->operations->type == VM_FILE){
+			do_munmap(target->va);
+		}
+	}
 }
