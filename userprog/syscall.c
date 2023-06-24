@@ -364,7 +364,7 @@ struct page* check_address(void *addr)
 }
 
 void check_buffer(void* buffer, unsigned size, bool writable){
-	for(char i = 0; i <= size; i++){
+	for(char i = 0; i < size; i++){
 		struct page *page = check_address(buffer + i);
 		if(writable == true && page->writable == false) 
 			exit(-1);
