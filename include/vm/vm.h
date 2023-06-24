@@ -63,7 +63,8 @@ struct page {
 };
 
 /* The representation of "frame" */
-struct list frame_list; // frame을 가지고 있는 물리메모리를 list로 다루기.
+struct list frame_table;
+struct lock frame_lock; // lock_aquire(), realese용
 
 struct frame {
 	void *kva;

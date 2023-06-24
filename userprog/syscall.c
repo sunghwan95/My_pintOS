@@ -30,7 +30,7 @@ bool remove(const char *file);
 int open(const char *file);
 int filesize(int fd);
 int read(int fd, void *buffer, unsigned size);
-int writable(int fd, const void *buffer, unsigned size);
+int write(int fd, const void *buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
@@ -109,7 +109,7 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_WRITE: /* Write to a file. */
-		f->R.rax = writable(f->R.rdi, f->R.rsi, f->R.rdx);
+		f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_SEEK: /* Change position in a file. */
 		seek(f->R.rdi, f->R.rsi);
@@ -285,7 +285,7 @@ buffer로부터 open file fd로 size 바이트를 적어줍니다.
 실제로 적힌 바이트의 수를 반환해주고,
 일부 바이트가 적히지 못했다면 size보다 더 작은 바이트 수가 반환될 수 있습니다.
 */
-int writable(int fd, const void *buffer, unsigned size)
+int write(int fd, const void *buffer, unsigned size)
 {
 	check_buffer(buffer, size, false);
 	int file_size;

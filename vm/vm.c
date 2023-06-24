@@ -17,8 +17,6 @@ bool install_page(void *upage, void *kpage, bool writable);
 static void vm_stack_growth(void *addr UNUSED);
 void iter_munmap(struct supplemental_page_table *spt);
 
-struct list frame_table;
-struct lock frame_lock; // lock_aquire(), realese용
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void vm_init(void){
@@ -113,9 +111,19 @@ void spt_remove_page(struct supplemental_page_table *spt, struct page *page){
 // /* Get the struct frame, that will be evicted. */
 static struct frame *
 vm_get_victim(void){
-	struct frame *victim = list_pop_front(&frame_table);
+	struct frame *victim = NULL;
 	/* TODO: The policy for eviction is up to you. */
-
+	struct thread *curr = thread_current();
+	struct list_elem* elem;
+	for (elem = list_begin(&frame_table); elem != list_end(&frame_table); elem = list_next(elem)) {		
+    	victim = list_entry(elem, struct frame, frame_elem);
+        // 현재 frame의 PTE가 최근에 접근되었는지 확인
+    	if (!pml4_is_accessed(curr->pml4, victim->page->va)) {
+        	break; 
+    	}
+		pml4_set_accessed(curr->pml4, victim->page->va, 0);
+		list_push_back(&frame_table, elem);
+    }
 	return victim;
 }
 /* Evict one page and return the corresponding frame.
@@ -139,10 +147,11 @@ vm_get_frame(void){
 	// 반환받은 주소를 frame 구조체에 할당
 	frame->kva = palloc_get_page(PAL_USER);
 	if (frame->kva == NULL){
-		PANIC("todo");
+		frame = vm_evict_frame();
 	}
 	/* TODO: Fill this function. */
 	frame->page = NULL;
+	list_push_back(&frame_table, &frame->frame_elem);
 
 	ASSERT(frame != NULL);
 	ASSERT(frame->page == NULL);
