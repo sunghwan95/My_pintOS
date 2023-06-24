@@ -388,6 +388,9 @@ void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
 	if(file == NULL) 
 		return NULL;
 	
+	// process_get_file로 열었던 파일을 file_reopen을 통해 새로운 fd로 여는 이유는
+	// 매핑된 파일을 여러번 열어서 사용할 경우가 있기 때문이다.
+	// 즉, 동일한 파일을 여러 프로세스 간에 매핑하기 위해서이다.
 	file = file_reopen(file);
 	if(file == NULL)
 		return NULL;
