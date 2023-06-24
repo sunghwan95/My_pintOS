@@ -1,24 +1,21 @@
 #ifndef __LIB_KERNEL_HASH_H
 #define __LIB_KERNEL_HASH_H
 
-/* Hash table.
- *
- * This data structure is thoroughly documented in the Tour of
- * Pintos for Project 3.
- *
- * This is a standard hash table with chaining.  To locate an
- * element in the table, we compute a hash function over the
- * element's data and use that as an index into an array of
- * doubly linked lists, then linearly search the list.
- *
- * The chain lists do not use dynamic allocation.  Instead, each
- * structure that can potentially be in a hash must embed a
- * struct hash_elem member.  All of the hash functions operate on
- * these `struct hash_elem's.  The hash_entry macro allows
- * conversion from a struct hash_elem back to a structure object
- * that contains it.  This is the same technique used in the
- * linked list implementation.  Refer to lib/kernel/list.h for a
- * detailed explanation. */
+/*
+해시 테이블.
+이 데이터 구조는 프로젝트 3을 위한 핀토스 둘러보기에 완전히 문서화되어 있습니다.
+
+이것은 체인이 있는 표준 해시 테이블입니다.
+표에서 요소를 찾기 위해 요소의 데이터에 대한 해시 함수를 계산하고 
+이중으로 연결된 목록 배열로 인덱스로 사용한 다음 목록을 선형으로 검색합니다.
+
+체인 목록은 동적 할당을 사용하지 않습니다.
+대신 해시에 포함될 수 있는 각 구조체는 struct hash_ember를 포함해야 합니다. 
+모든 해시 함수는 이러한 'struct hash_elem'에서 작동합니다. 
+hash_entry 매크로를 사용하면 struct hash_elem에서 이 매크로를 포함하는 structure 개체로 다시 변환할 수 있습니다.
+이것은 링크 목록 구현에 사용된 것과 동일한 기법입니다. 
+자세한 설명은 lib/kernel/list.h를 참조하십시오.
+*/
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -30,11 +27,11 @@ struct hash_elem {
 	struct list_elem list_elem;
 };
 
-/* Converts pointer to hash element HASH_ELEM into a pointer to
- * the structure that HASH_ELEM is embedded inside.  Supply the
- * name of the outer structure STRUCT and the member name MEMBER
- * of the hash element.  See the big comment at the top of the
- * file for an example. */
+/* 
+해시 요소 HASH_ELEM에 대한 포인터를 HASH_ELEM이 포함된 구조에 대한 포인터로 변환합니다.
+외부 구조 구조물의 이름과 해시 요소의 멤버 이름 MEMBER를 제공합니다.
+파일의 맨 위에 있는 큰 설명을 참조하여 예제를 참조하십시오.
+*/
 #define hash_entry(HASH_ELEM, STRUCT, MEMBER)                   \
 	((STRUCT *) ((uint8_t *) &(HASH_ELEM)->list_elem        \
 		- offsetof (STRUCT, MEMBER.list_elem)))
