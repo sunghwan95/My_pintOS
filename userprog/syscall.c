@@ -136,6 +136,8 @@ power_off()를 호출해서 Pintos를 종료합니다. (power_off()는 src/inclu
 */
 void halt(void)
 {
+	destroy_frame_table();
+	bitmap_destroy(swap_table);
 	power_off();
 }
 /*
@@ -234,7 +236,6 @@ fd(첫 번째 인자)로서 열려 있는 파일의 크기가 몇 바이트인�
 */
 int filesize(int fd)
 {
-
 	struct file *find_file = process_get_file(fd);
 	if(find_file == NULL)
 		return -1;
@@ -295,7 +296,7 @@ int write(int fd, const void *buffer, unsigned size)
 		file_size = size;
 	}
 	else if(fd == STDIN_FILENO){
-		exit(-1);
+		return -1;
 	}
 	else{
 		if(process_get_file(fd) == NULL) 
@@ -358,7 +359,7 @@ struct page* check_address(void *addr)
 		exit(-1);
 	}
 	struct page *page = spt_find_page(&curr->spt, addr);
-	if(!page) 
+	if(page == NULL) 
 		exit(-1);
 	return page;
 }
@@ -372,38 +373,27 @@ void check_buffer(void* buffer, unsigned size, bool writable){
 }
 
 void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
-	if(!addr || pg_round_down(addr) != addr || is_kernel_vaddr(addr) || length <=0 || length >= 1<<20) 
-		return NULL;
-
-	if(fd < FD_MIN || fd >= FD_MAX) 
-		exit(-1);
-
 	if(offset % PGSIZE != 0)
 		return NULL;
-
+	
+	if(addr ==  NULL || pg_round_down(addr) != addr || is_kernel_vaddr(addr) || (long long)length <=0) 
+		return NULL;
+	
 	if(spt_find_page(&thread_current()->spt, addr)) 
 		return NULL;
 
-	struct file *file = process_get_file(fd);
-	if(file == NULL) 
-		return NULL;
-	
-	// process_get_file로 열었던 파일을 file_reopen을 통해 새로운 fd로 여는 이유는
-	// 매핑된 파일을 여러번 열어서 사용할 경우가 있기 때문이다.
-	// 즉, 동일한 파일을 여러 프로세스 간에 매핑하기 위해서이다.
-	file = file_reopen(file);
-	if(file == NULL)
-		return NULL;
-	
-	off_t file_len = file_length(file);
-	if(file_len <= 0)
+	if(fd < FD_MIN)
+		exit(-1);
+
+	struct file *target = process_get_file(fd);
+	if(target == NULL) 
 		return NULL;
 
-	return do_mmap(addr, file_len, writable, file, offset);
+	return do_mmap(addr, length, writable, target, offset);
 }
 
 void munmap (void *addr){
 	if(is_kernel_vaddr(addr) || !addr)
-    	return NULL;
+    	exit(-1);
 	do_munmap(addr);
 };

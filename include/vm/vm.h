@@ -48,7 +48,14 @@ struct page {
 
 	/* Your implementation */
 	struct hash_elem hash_elem;
+
 	bool writable;
+	bool copy_writable;
+	struct file *file_;
+
+	size_t offset;
+	size_t read_bytes;
+	size_t zero_bytes;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -65,6 +72,7 @@ struct page {
 /* The representation of "frame" */
 struct list frame_table;
 struct lock frame_lock; // lock_aquire(), realese용
+struct bitmap *swap_table;
 
 struct frame {
 	void *kva;
@@ -96,25 +104,20 @@ struct supplemental_page_table {
 };
 
 #include "threads/thread.h"
-void supplemental_page_table_init (struct supplemental_page_table *spt);
-bool supplemental_page_table_copy (struct supplemental_page_table *dst,
-		struct supplemental_page_table *src);
-void supplemental_page_table_kill (struct supplemental_page_table *spt);
-struct page *spt_find_page (struct supplemental_page_table *spt,
-		void *va);
-bool spt_insert_page (struct supplemental_page_table *spt, struct page *page);
+void supplemental_page_table_init(struct supplemental_page_table *spt UNUSED);
+bool supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED, struct supplemental_page_table *src UNUSED);
+void supplemental_page_table_kill(struct supplemental_page_table *spt UNUSED);
+struct page *spt_find_page(struct supplemental_page_table *spt UNUSED, void *va UNUSED);
+bool spt_insert_page(struct supplemental_page_table *spt UNUSED, struct page *page UNUSED);
 void spt_remove_page (struct supplemental_page_table *spt, struct page *page);
 
 void vm_init (void);
-bool vm_try_handle_fault (struct intr_frame *f, void *addr, bool user,
-		bool write, bool not_present);
 
 #define vm_alloc_page(type, upage, writable) \
 	vm_alloc_page_with_initializer ((type), (upage), (writable), NULL, NULL)
-bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
-		bool writable, vm_initializer *init, void *aux);
+bool vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED);
 void vm_dealloc_page (struct page *page);
-bool vm_claim_page (void *va);
+bool vm_claim_page(void *va UNUSED);
 enum vm_type page_get_type (struct page *page);
 void remove_spt(struct hash_elem *elem, void* aux);
 #endif  /* VM_VM_H */
