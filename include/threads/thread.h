@@ -35,6 +35,8 @@ typedef int tid_t;
 
 #define STDIN_FILENO 0
 #define STDOUT_FILENO 1
+
+static struct thread *idle_thread;
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The

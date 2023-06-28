@@ -6,10 +6,9 @@
 #include "threads/vaddr.h"
 
 
-#define page_in_disk (PGSIZE/DISK_SECTOR_SIZE)
+size_t page_in_disk = (PGSIZE/DISK_SECTOR_SIZE);
 /* DO NOT MODIFY BELOW LINE */
 static struct disk *swap_disk;
-static struct bitmap* swap_table;
 static bool anon_swap_in (struct page *page, void *kva);
 static bool anon_swap_out (struct page *page);
 static void anon_destroy (struct page *page);
@@ -37,6 +36,9 @@ anon_initializer (struct page *page, enum vm_type type, void *kva) {
 	page->operations = &anon_ops;
 
 	struct anon_page *anon_page = &page->anon;
+	anon_page->thread = thread_current();
+	anon_page->idx = SIZE_MAX;
+	return true;
 }
 
 /* Swap in the page by read contents from the swap disk. */
@@ -57,7 +59,7 @@ anon_swap_in (struct page *page, void *kva) {
 	}
 	//스왑 테이블에서 해당 안덱스를 사용하지 않음으로 변경.
 	bitmap_set(swap_table, index, false);
-
+	anon_page->idx = -1;
 	return true;
 }
 
@@ -72,13 +74,15 @@ anon_swap_out (struct page *page) {
 	}
 	for(int i = 0; i < page_in_disk; i++){
 		//스왐 디스크에서 스왑디스크의 오프셋만큼, 물리메모리에 있는 페이지를 가리킨다.
-		disk_write(swap_disk, (index * page_in_disk) + i, page->va + (i * DISK_SECTOR_SIZE));
+		disk_write(swap_disk, (index * page_in_disk) + i, page->frame->kva + (i * DISK_SECTOR_SIZE));
 	}
 	//해당 인덱스를 사용중으로 변경
 	bitmap_set(swap_table, index, true);
 	//가상주소와의 매핑 제거.
-	pml4_clear_page(thread_current()->pml4, page->va);
+	pml4_set_dirty(anon_page->thread->pml4, page->va, false);
+	pml4_clear_page(anon_page->thread->pml4, page->va);
 	anon_page->idx = index;
+	page->frame = NULL;
 	return true;
 }
 
@@ -86,4 +90,8 @@ anon_swap_out (struct page *page) {
 static void
 anon_destroy (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
+	if(page->frame != NULL){
+		list_remove(&page->frame->frame_elem);
+		free(page->frame);
+	}
 }
