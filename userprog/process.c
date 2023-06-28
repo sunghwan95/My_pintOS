@@ -99,7 +99,9 @@ tid_t process_fork(const char *name, struct intr_frame *if_ UNUSED)
     }
     struct thread *child = get_child_process(tid); // child_list안에서 만들어진 child thread를 찾음
 
+	lock_acquire(&filesys_lock);
     sema_down(&child->load_sema);                    // 자식이 메모리에 load 될때까지 기다림(blocked)
+	lock_release(&filesys_lock);
 
     if (child->exit_flag == -1)
     {
@@ -143,6 +145,8 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
+		pml4_destroy(current->pml4);
+		current->exit_flag = -1;
 		palloc_free_page(newpage);
 		return false;
 	}
@@ -187,7 +191,7 @@ __do_fork (void *aux) {
         if (file == NULL)
             continue;
         struct file *new_file;
-        if (file > 2)
+        if (file > FD_MIN)
             new_file = file_duplicate(file);
         else
 			new_file = file;
@@ -205,6 +209,7 @@ error:
 	sema_up(&current->load_sema);
 	thread_exit ();
 }
+
 struct thread *get_child_process(int pid)
 {
 	struct thread *par = thread_current();
@@ -212,9 +217,9 @@ struct thread *get_child_process(int pid)
 
 	if(list_empty(&par->child_list)) return NULL;
 
-	for(current_elem = list_front(&par->child_list);current_elem != list_tail(&par->child_list);current_elem = list_next(current_elem)){
-		if(list_entry(current_elem,struct thread,child_elem)->tid == pid){
-			return list_entry(current_elem,struct thread,child_elem);
+	for(current_elem = list_front(&par->child_list); current_elem != list_tail(&par->child_list); current_elem = list_next(current_elem)){
+		if(list_entry(current_elem, struct thread, child_elem)->tid == pid){
+			return list_entry(current_elem, struct thread, child_elem);
 		}
 	}
 	return NULL;
@@ -242,7 +247,7 @@ int process_exec(void *f_name)
 #endif
 
     // for argument parsing
-    char *parse[64]; 
+    char *parse[128]; 
     int count = 0;  
 
     char *token;    
@@ -324,7 +329,7 @@ int process_add_file (struct file *f){
 struct file *process_get_file(int fd)
 {
 	struct thread *cur = thread_current();
-	if(fd < FD_MIN || fd >= FD_MAX){
+	if(fd < FD_MIN || fd > FD_MAX){
 		return NULL;
 	}
 	return cur->fdt[fd];
@@ -368,17 +373,20 @@ int process_wait(tid_t child_tid UNUSED)
 void process_exit(void)
 {
 	struct thread *cur = thread_current();
-	for (int i = 2; i < 64; i++)
+	for (int i = FD_MIN; i < FD_MAX; i++)
 		close(i);
-#ifdef VM
-	if (!hash_empty(&cur->spt.spt_hash)){
-		iter_munmap(&cur->spt.spt_hash);
-	}
-#endif
+
+	palloc_free_multiple(cur->fdt, 3);
+	cur->fdt =  NULL;
+
 	file_close(cur->running_file);
+	process_cleanup(); // pml4를 날림(이 함수를 call 한 thread의 pml4)
 	sema_up(&cur->exit_sema);
 	sema_down(&cur->free_sema);
-	process_cleanup(); // pml4를 날림(이 함수를 call 한 thread의 pml4)
+	if(cur == idle_thread){
+		destroy_frame_table();
+		bitmap_destroy(swap_table);
+	}
 }
 
 /* Free the current process's resources. */
@@ -388,6 +396,7 @@ process_cleanup (void) {
 
 #ifdef VM
 	supplemental_page_table_kill(&curr->spt);
+	return;
 #endif
 	uint64_t *pml4;
 	/* Destroy the current process's page directory and switch back
@@ -736,19 +745,26 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
-	struct segment *seg = (struct segment *)aux;
+	struct frame *frame = page->frame;
+	struct segment *seg = (struct segment*)aux;
+
 	struct file *file = seg->file;
-	off_t ofs = seg->ofs;
-	size_t read_bytes = seg->page_read_bytes;
-	size_t zero_bytes = PGSIZE - read_bytes;
-	
-	file_seek(file, ofs);
-	if(file_read(file, page->frame->kva, read_bytes) != (int)read_bytes){
-		palloc_free_page(page->frame->kva);
-		free(aux);
+	off_t offset = seg->ofs;
+	size_t page_read_bytes = seg->page_read_bytes;
+	size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+	uint8_t *kva = page->frame->kva;
+	if(kva == NULL){
+		free(page);
 		return false;
 	}
-	memset(page->frame->kva + read_bytes, 0, zero_bytes);
+
+	if(file_read_at(file, frame->kva, page_read_bytes, offset) != (int)page_read_bytes){
+		free(seg);
+		return false;
+	}
+
+	memset(frame->kva + page_read_bytes, 0, page_zero_bytes);
 	return true;
 }
 
@@ -786,9 +802,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		seg->file = file;
 		seg->page_read_bytes = page_read_bytes;
 		seg->ofs = ofs;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, seg))
+		if (!vm_alloc_page_with_initializer (VM_ANON, upage, writable, lazy_load_segment, seg)){
+			free(seg);
 			return false;
+		}
+			
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
@@ -809,9 +827,9 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
-	if (vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true)){
-		success = vm_claim_page(stack_bottom);
-		if (success){
+	success = vm_alloc_page(VM_ANON, stack_bottom, true);
+	if (success){
+		if (vm_claim_page(stack_bottom)){
 			if_->rsp = USER_STACK;
 			thread_current()->stack_bottom = stack_bottom;
 		}
