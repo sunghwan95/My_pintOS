@@ -106,18 +106,49 @@ void spt_remove_page(struct supplemental_page_table *spt, struct page *page){
 static struct frame *
 vm_get_victim(void){
 	/* TODO: The policy for eviction is up to you. */
-	struct frame *victim;
+	// struct frame *victim = NULL;
+	// struct list_elem* elem;
+
+	// lock_acquire(&frame_lock);
+	// // frame_table을 순회하면서 가장 액세스가 오래된 페이지를 찾음.
+	// for (elem = list_begin(&frame_table); elem != list_end(&frame_table); elem = list_next(elem)) {		
+    // 	struct frame *curr_frame = list_entry(elem, struct frame, frame_elem);
+
+    // 	if (pml4_is_accessed(thread_current()->pml4, victim->page->va)) {//현재 frame의 pte가 최근에 접근되었다면
+	// 		pml4_set_accessed(thread_current()->pml4, victim->page->va, 0);
+	// 		///list_push_back(&frame_table, elem);
+    // 	}else{
+	// 		victim = curr_frame;
+	// 		list_remove(elem);
+	// 		break;
+	// 	}
+    // }
+
+	// if(victim == NULL){// 모든 페이지가 최근에 접근된 상태라면
+	// 	elem = list_pop_front(&frame_table);
+	// 	victim = list_entry(elem, struct frame, frame_elem);
+	// }	
+	// lock_release(&frame_lock);
+	// return victim;
+
+	struct frame *victim = NULL;
 	struct list_elem* elem;
 	lock_acquire(&frame_lock);
 	for (elem = list_begin(&frame_table); elem != list_end(&frame_table); elem = list_next(elem)) {		
-    	victim = list_entry(elem, struct frame, frame_elem);
+    	struct frame *curr_frame = list_entry(elem, struct frame, frame_elem);
 
-    	if (!pml4_is_accessed(thread_current()->pml4, victim->page->va)) {
+    	if (!pml4_is_accessed(thread_current()->pml4, curr_frame->page->va)) {
+			victim = curr_frame;
 			list_remove(elem);
         	break;
     	}
-		pml4_set_accessed(thread_current()->pml4, victim->page->va, 0);
+		pml4_set_accessed(thread_current()->pml4, curr_frame->page->va, 0);
     }
+
+	if(victim == NULL){
+		elem = list_pop_front(&frame_table);
+		victim = list_entry(elem, struct frame, frame_elem);
+	}
 	lock_release(&frame_lock);
 	return victim;
 }
