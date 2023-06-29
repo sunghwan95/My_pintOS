@@ -100,7 +100,7 @@ tid_t process_fork(const char *name, struct intr_frame *if_ UNUSED)
     struct thread *child = get_child_process(tid); // child_list안에서 만들어진 child thread를 찾음
 
 	lock_acquire(&filesys_lock);
-    sema_down(&child->load_sema);                    // 자식이 메모리에 load 될때까지 기다림(blocked)
+    sema_down(&child->load_sema);
 	lock_release(&filesys_lock);
 
     if (child->exit_flag == -1)

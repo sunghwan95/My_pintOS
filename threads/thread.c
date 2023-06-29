@@ -384,10 +384,8 @@ void wakeup(int64_t g_ticks) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->pre_priority = new_priority; 
-	// FIXME: 현재 쓰레드의 우선 순위와 ready_list에서 가장 높은 우선 순위를 비교하여 스케쥴링 하는 함수 호출
+	// 현재 쓰레드의 우선 순위와 ready_list에서 가장 높은 우선 순위를 비교하여 스케쥴링 하는 함수 호출
 	refresh_priority();
-	// thread_yield();
-	// donate_priority();
 	test_max_priority();
 }
 
