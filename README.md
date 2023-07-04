@@ -104,7 +104,7 @@ git pull origin 내 브런치 명 ex) git pull origin sunghwan95
 
 pintOS 초기 폴더에서 `sudo chmod 755 build_launch.sh` 로 권한을 설정한 뒤에 `$ ./build_launch.sh` 로 파일 실행
 
-# Result
+# Results
 ```
 Project 1 : Threads All Passed
 Project 2 : User Programs All Passed
