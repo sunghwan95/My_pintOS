@@ -107,7 +107,7 @@ pintOS 초기 폴더에서 `sudo chmod 755 build_launch.sh` 로 권한을 설정
 # Result
 ```
 Project 1 : Threads All Passed
-Project 2 : User Programms All Passed
+Project 2 : User Programs All Passed
 Project 3 : Virtual Memory All Passed
-Project 4 : (extra) File System
+Project 4 : (extra) File System Remained
 ```
